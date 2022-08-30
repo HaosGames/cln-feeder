@@ -21,7 +21,7 @@
         commonArgs = {
           src = ./.;
           pname = projectName;
-          version = "0.1.1";
+          version = "1.0.0";
 
           buildInputs = with pkgs; [
             # Add extra build inputs here, etc.
