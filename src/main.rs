@@ -109,7 +109,7 @@ async fn iterate(client: &mut ClnRpc, db: &mut SqliteConnection) -> Result<()> {
     }
     Ok(())
 }
-async fn new_fee(last_revenue: u32, last_fee: u32, current_revenue: u32, current_fee: u32) -> u32 {
+async fn new_fee(last_fee: u32, last_revenue: u32, current_fee: u32, current_revenue: u32) -> u32 {
     return if current_revenue > last_revenue {
         if current_fee > last_fee {
             current_fee + (current_fee - last_fee)
