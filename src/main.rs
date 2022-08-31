@@ -33,6 +33,10 @@ struct Cli {
     /// Log Level
     #[clap(short, long, action = clap::ArgAction::Count, default_value_t = 0)]
     verbose: u8,
+
+    /// Log Filter
+    #[clap(short, long, default_value_t = String::from("cln-feeder"))]
+    log_filter: String,
 }
 
 #[tokio::main]
@@ -45,18 +49,27 @@ async fn main() -> Result<()> {
         1 => LevelFilter::Warn,
         _ => LevelFilter::Error,
     };
-    let _ = env_logger::builder()
-        .write_style(WriteStyle::Always)
-        .format_timestamp(None)
-        .filter_level(level)
-        //.filter_module("cln-feeder", LevelFilter::Trace)
-        .init();
+    let _ = if cli.log_filter.as_str() != "" {
+        env_logger::builder()
+            .write_style(WriteStyle::Always)
+            .format_timestamp(None)
+            .filter_level(level)
+            .filter_module(cli.log_filter.as_str(), level)
+            .init();
+    } else {
+        env_logger::builder()
+            .write_style(WriteStyle::Always)
+            .format_timestamp(None)
+            .filter_level(level)
+            .init();
+    };
 
     info!("Creating RPC connection to CLN on {:?}", cli.socket);
     let mut client = ClnRpc::new(cli.socket).await.unwrap();
 
-
-    tokio::fs::create_dir_all(cli.data_dir.clone()).await.expect("Couldn't create data dir");
+    tokio::fs::create_dir_all(cli.data_dir.clone())
+        .await
+        .expect("Couldn't create data dir");
     let sqlite_conn = if cli.temp_database {
         String::from("sqlite::memory:")
     } else {
@@ -65,7 +78,6 @@ async fn main() -> Result<()> {
             tokio::fs::File::create(path.clone()).await.unwrap();
         }
         path
-
     };
 
     info!("Connecting to database {}", sqlite_conn.clone());
@@ -94,7 +106,7 @@ async fn iterate(client: &mut ClnRpc, db: &mut SqliteConnection) -> Result<()> {
                 current_fee,
                 current_revenue as u32,
             )
-                .await;
+            .await;
             info!("New fee {} msats for {}", new_fee, id);
             // TODO set new fee
         }

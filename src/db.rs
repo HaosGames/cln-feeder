@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::Utc;
 use cln_rpc::primitives::ShortChannelId;
-use sqlx::{Executor, query, Row, SqliteConnection};
+use sqlx::{query, Executor, Row, SqliteConnection};
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -12,17 +12,15 @@ pub async fn store_current_values(
     revenue: u32,
 ) -> Result<()> {
     let now = Utc::now().timestamp();
-    db.execute(
-        query!(
-            "INSERT OR REPLACE INTO channels (short_channel_id, last_fee, last_revenue, last_updated)\
+    db.execute(query!(
+        "INSERT OR REPLACE INTO channels (short_channel_id, last_fee, last_revenue, last_updated)\
                      VALUES (?, ?, ?, ?)",
-            id,
-            fee,
-            revenue,
-            now,
-        )
-    )
-        .await?;
+        id,
+        fee,
+        revenue,
+        now,
+    ))
+    .await?;
     Ok(())
 }
 pub async fn create_table(db: &mut SqliteConnection) -> Result<()> {
