@@ -12,8 +12,9 @@ use log::{debug, info, LevelFilter};
 use sqlx::{Connection, SqliteConnection};
 use std::path::{PathBuf};
 use std::str::FromStr;
+use chrono::{Duration, Utc};
 
-const UPDATE_INTERVAL_SECONDS: u32 = 1200;
+const ITERATION_SECONDS: u32 = 1200; // 4h
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -83,7 +84,7 @@ async fn main() -> Result<()> {
         debug!("New Iteration");
         iterate(&mut client, &mut db).await?;
         tokio::time::sleep(std::time::Duration::from_secs(
-            UPDATE_INTERVAL_SECONDS.into(),
+            ITERATION_SECONDS.into(),
         ))
         .await;
     }
@@ -94,7 +95,10 @@ async fn iterate(client: &mut ClnRpc, db: &mut SqliteConnection) -> Result<()> {
     for (id, current_fee) in current_fees {
         let current_revenue =
             get_current_revenue(ShortChannelId::from_str(id.as_str()).unwrap(), client).await;
-        if let Some((last_fee, last_revenue, _last_updated)) = last.get(id.as_str()) {
+        if let Some((last_fee, last_revenue, last_updated)) = last.get(id.as_str()) {
+            if last_updated > &(Utc::now() - Duration::seconds(ITERATION_SECONDS as i64)).timestamp() {
+                continue;
+            }
             let new_fee = new_fee(
                 *last_fee,
                 *last_revenue,
