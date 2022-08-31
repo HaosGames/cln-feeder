@@ -10,7 +10,7 @@ use cln_rpc::ClnRpc;
 use env_logger::WriteStyle;
 use log::{debug, info, LevelFilter};
 use sqlx::{Connection, SqliteConnection};
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use std::str::FromStr;
 
 const UPDATE_INTERVAL_SECONDS: u32 = 1200;
@@ -64,11 +64,8 @@ async fn main() -> Result<()> {
     };
 
     info!("Creating RPC connection to CLN on {:?}", cli.socket);
-    let mut client = ClnRpc::new(cli.socket).await.unwrap();
+    let mut client = ClnRpc::new(cli.socket).await.expect("Couldn't connect to RPC Socket");
 
-    tokio::fs::create_dir_all(cli.database.clone())
-        .await
-        .expect("Couldn't create data dir");
     let sqlite_conn = if cli.temp_database {
         String::from("sqlite::memory:")
     } else {
