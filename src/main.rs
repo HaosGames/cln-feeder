@@ -60,7 +60,12 @@ async fn main() -> Result<()> {
     let sqlite_conn = if cli.temp_database {
         String::from("sqlite::memory:")
     } else {
-        cli.data_dir + "./feeder.sqlite"
+        let path = cli.data_dir + "./feeder.sqlite";
+        if tokio::fs::File::open(path.clone()).await.is_err() {
+            tokio::fs::File::create(path.clone()).await.unwrap();
+        }
+        path
+
     };
 
     info!("Connecting to database {}", sqlite_conn.clone());
