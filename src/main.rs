@@ -35,7 +35,7 @@ struct Cli {
     verbose: u8,
 
     /// Log Filter
-    #[clap(short, long, default_value_t = String::from("cln-feeder"))]
+    #[clap(short, long, default_value_t = String::from("cln_feeder"))]
     log_filter: String,
 }
 
@@ -53,7 +53,6 @@ async fn main() -> Result<()> {
         env_logger::builder()
             .write_style(WriteStyle::Always)
             .format_timestamp(None)
-            .filter_level(level)
             .filter_module(cli.log_filter.as_str(), level)
             .init();
     } else {
