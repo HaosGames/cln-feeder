@@ -102,7 +102,7 @@ async fn iterate(client: &mut ClnRpc, db: &mut SqliteConnection) -> Result<()> {
                 current_revenue as u32,
             )
             .await;
-            info!("New fee {} msats for {}", new_fee, id);
+            info!("New fee {} -> {} msats for {}", current_fee, new_fee, id);
             // TODO set new fee
         }
         store_current_values(db, id.clone(), current_fee, current_revenue as u32).await?;
