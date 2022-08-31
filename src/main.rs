@@ -1,24 +1,17 @@
 mod db;
 mod rpc;
 
+use crate::db::{create_table, query_last_values, store_current_values};
+use crate::rpc::{get_current_fees, get_current_revenue};
 use anyhow::Result;
-use chrono::{Duration, Utc};
 use clap::Parser;
-use cln_rpc::model::{
-    ListforwardsRequest, ListforwardsStatus, ListpeersPeers, ListpeersPeersChannelsState,
-    ListpeersRequest,
-};
 use cln_rpc::primitives::ShortChannelId;
-use cln_rpc::{ClnRpc, Request, Response};
+use cln_rpc::ClnRpc;
 use env_logger::WriteStyle;
-use log::{debug, LevelFilter};
-use sqlx::sqlite::SqliteRow;
-use sqlx::{Connection, Executor, Row, Sqlite, SqliteConnection};
-use std::collections::HashMap;
+use log::{debug, info, LevelFilter};
+use sqlx::{Connection, SqliteConnection};
 use std::path::PathBuf;
 use std::str::FromStr;
-use crate::db::{create_table, query_last_values, store_current_values};
-use crate::rpc::{get_current_fees, get_current_peers, get_current_revenue};
 
 const UPDATE_INTERVAL_SECONDS: u32 = 1200;
 
@@ -34,7 +27,7 @@ struct Cli {
     data_dir: String,
 
     /// Use a temporary sqlite database stored in memory
-    #[clap(short, long, default_value_t = false, value_name = "BOOL")]
+    #[clap(short, long, action)]
     temp_database: bool,
 
     /// Log Level
@@ -59,17 +52,23 @@ async fn main() -> Result<()> {
         //.filter_module("cln-feeder", LevelFilter::Trace)
         .init();
 
+    info!("Creating RPC connection to CLN on {:?}", cli.socket);
     let mut client = ClnRpc::new(cli.socket).await.unwrap();
+
+
+    tokio::fs::create_dir_all(cli.data_dir.clone()).await.expect("Couldn't create data dir");
     let sqlite_conn = if cli.temp_database {
         String::from("sqlite::memory:")
     } else {
         cli.data_dir + "./feeder.sqlite"
     };
 
+    info!("Connecting to database {}", sqlite_conn.clone());
     let mut db = SqliteConnection::connect(sqlite_conn.as_str()).await?;
-    create_table(&mut db).await?;
+    create_table(&mut db).await.expect("Couldn't create table");
 
     loop {
+        debug!("New Iteration");
         iterate(&mut client, &mut db).await?;
         tokio::time::sleep(std::time::Duration::from_secs(
             UPDATE_INTERVAL_SECONDS.into(),
@@ -88,13 +87,14 @@ async fn iterate(client: &mut ClnRpc, db: &mut SqliteConnection) -> Result<()> {
     {
         let current_revenue =
             get_current_revenue(ShortChannelId::from_str(id.as_str()).unwrap(), client).await;
-        let _new_fee = new_fee(
+        let new_fee = new_fee(
             *last_fee,
             *last_revenue,
             *current_fee,
             current_revenue as u32,
         )
         .await;
+        info!("New fee {} msats for {}", new_fee, id);
         // TODO set new fee
         store_current_values(db, id.clone(), *current_fee, current_revenue as u32).await?;
     }

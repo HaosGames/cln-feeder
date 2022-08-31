@@ -1,10 +1,9 @@
-use std::collections::HashMap;
-use anyhow::Result;
+use crate::UPDATE_INTERVAL_SECONDS;
 use chrono::{Duration, Utc};
-use cln_rpc::ClnRpc;
 use cln_rpc::model::*;
 use cln_rpc::primitives::ShortChannelId;
-use crate::UPDATE_INTERVAL_SECONDS;
+use cln_rpc::ClnRpc;
+use std::collections::HashMap;
 
 pub async fn get_current_revenue(short_channel_id: ShortChannelId, client: &mut ClnRpc) -> u64 {
     let last_updated =

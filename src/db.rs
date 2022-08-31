@@ -1,11 +1,16 @@
-use std::collections::HashMap;
-use std::str::FromStr;
-use sqlx::{Executor, Row, SqliteConnection};
 use anyhow::Result;
 use chrono::Utc;
 use cln_rpc::primitives::ShortChannelId;
+use sqlx::{Executor, Row, SqliteConnection};
+use std::collections::HashMap;
+use std::str::FromStr;
 
-pub async fn store_current_values(db: &mut SqliteConnection, id: String, fee: u32, revenue: u32) -> Result<()> {
+pub async fn store_current_values(
+    db: &mut SqliteConnection,
+    id: String,
+    fee: u32,
+    revenue: u32,
+) -> Result<()> {
     db.execute(
         format!(
             "INSERT OR REPLACE INTO channels (short_channel_id, last_fee, last_revenue, last_updated)\
@@ -25,10 +30,12 @@ pub async fn create_table(db: &mut SqliteConnection) -> Result<()> {
         "CREATE TABLE IF NOT EXIST channels \
     (short_channel_id PRIMARY KEY, last_fee, last_revenue, last_updated PRIMARY KEY)",
     )
-        .await?;
+    .await?;
     Ok(())
 }
-pub async fn query_last_values(db: &mut SqliteConnection) -> Result<HashMap<String, (u32, u32, i64)>> {
+pub async fn query_last_values(
+    db: &mut SqliteConnection,
+) -> Result<HashMap<String, (u32, u32, i64)>> {
     let values = db
         .fetch_all("SELECT short_channel_id, last_fee, last_revenue, last_updated FROM channels")
         .await?;
