@@ -10,7 +10,7 @@ use cln_rpc::ClnRpc;
 use env_logger::WriteStyle;
 use log::{debug, info, LevelFilter};
 use sqlx::{Connection, SqliteConnection};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 const UPDATE_INTERVAL_SECONDS: u32 = 1200;
@@ -23,8 +23,8 @@ struct Cli {
     socket: PathBuf,
 
     /// Path to the data directory that feeder uses.
-    #[clap(short, long, value_parser, value_name = "DIRECTORY", default_value_t = String::from("~/.config/cln-feeder"))]
-    data_dir: String,
+    #[clap(short, long, value_parser, value_name = "FILE", default_value_t = String::from("~/.config/cln-feeder/cln-feeder.sqlite"))]
+    database: String,
 
     /// Use a temporary sqlite database stored in memory
     #[clap(short, long, action)]
@@ -66,17 +66,16 @@ async fn main() -> Result<()> {
     info!("Creating RPC connection to CLN on {:?}", cli.socket);
     let mut client = ClnRpc::new(cli.socket).await.unwrap();
 
-    tokio::fs::create_dir_all(cli.data_dir.clone())
+    tokio::fs::create_dir_all(cli.database.clone())
         .await
         .expect("Couldn't create data dir");
     let sqlite_conn = if cli.temp_database {
         String::from("sqlite::memory:")
     } else {
-        let path = cli.data_dir + "./feeder.sqlite";
-        if tokio::fs::File::open(path.clone()).await.is_err() {
-            tokio::fs::File::create(path.clone()).await.unwrap();
+        if tokio::fs::File::open(cli.database.clone()).await.is_err() {
+            tokio::fs::File::create(cli.database.clone()).await.unwrap();
         }
-        path
+        cli.database
     };
 
     info!("Connecting to database {}", sqlite_conn.clone());
