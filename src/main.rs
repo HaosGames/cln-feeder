@@ -84,24 +84,21 @@ async fn main() -> Result<()> {
 async fn iterate(client: &mut ClnRpc, db: &mut SqliteConnection) -> Result<()> {
     let last = query_last_values(db).await?;
     let current_fees = get_current_fees(client).await;
-    for (id, last_fee, last_revenue, current_fee, _last_updated) in
-        current_fees.iter().map(|(id, current_fee)| {
-            let (last_fee, last_revenue, last_updated) = last.get(id).unwrap();
-            (id, last_fee, last_revenue, current_fee, last_updated)
-        })
-    {
-        let current_revenue =
-            get_current_revenue(ShortChannelId::from_str(id.as_str()).unwrap(), client).await;
-        let new_fee = new_fee(
-            *last_fee,
-            *last_revenue,
-            *current_fee,
-            current_revenue as u32,
-        )
-        .await;
-        info!("New fee {} msats for {}", new_fee, id);
-        // TODO set new fee
-        store_current_values(db, id.clone(), *current_fee, current_revenue as u32).await?;
+    for (id, current_fee) in current_fees {
+        if let Some((last_fee, last_revenue, _last_updated)) = last.get(id.as_str()) {
+            let current_revenue =
+                get_current_revenue(ShortChannelId::from_str(id.as_str()).unwrap(), client).await;
+            let new_fee = new_fee(
+                *last_fee,
+                *last_revenue,
+                current_fee,
+                current_revenue as u32,
+            )
+                .await;
+            info!("New fee {} msats for {}", new_fee, id);
+            // TODO set new fee
+            store_current_values(db, id.clone(), current_fee, current_revenue as u32).await?;
+        }
     }
     Ok(())
 }
