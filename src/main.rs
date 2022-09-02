@@ -46,7 +46,7 @@ struct Cli {
     epochs: u32,
 
     /// The length of an epoch in seconds
-    #[clap(short, long, default_value_t = 12000, value_name = "SECONDS")]
+    #[clap(long, default_value_t = 12000, value_name = "SECONDS")]
     epoch_length: u32,
 }
 
