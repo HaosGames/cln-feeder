@@ -91,8 +91,13 @@ async fn main() -> Result<()> {
     let mut db = if cli.temp_database {
         SqliteConnection::connect("sqlite::memory:").await?
     } else {
+        tokio::fs::create_dir_all(cli.data_dir)
+            .await
+            .expect("Couldn't create data dir");
         if tokio::fs::File::open(db_path.clone()).await.is_err() {
-            tokio::fs::File::create(db_path.clone()).await.unwrap();
+            tokio::fs::File::create(db_path.clone())
+                .await
+                .expect("Couldn't create database file");
         }
         SqliteConnection::connect(db_path.to_str().unwrap()).await?
     };
