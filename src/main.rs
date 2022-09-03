@@ -18,11 +18,11 @@ use std::str::FromStr;
 #[clap(author, version, about, long_about = None)]
 struct Cli {
     /// Path to the CLN Socket. Usually in `./clightning/bitcoin/lightning-rpc`
-    #[clap(short, long, value_parser, value_name = "SOCKET")]
+    #[clap(short, long, value_parser, value_name = "PATH")]
     socket: PathBuf,
 
     /// Path to the data directory that feeder uses.
-    #[clap(short, long, value_parser, value_name = "FILE", default_value_t = String::from("~/.config/cln-feeder/cln-feeder.sqlite"))]
+    #[clap(short, long, value_parser, value_name = "PATH", default_value_t = String::from("~/.config/cln-feeder/cln-feeder.sqlite"))]
     database: String,
 
     /// Use a temporary sqlite database stored in memory
@@ -34,7 +34,7 @@ struct Cli {
     verbose: u8,
 
     /// Log Filter
-    #[clap(short, long, default_value_t = String::from("cln_feeder"))]
+    #[clap(short, long, default_value_t = String::from("cln_feeder"), value_name = "STRING")]
     log_filter: String,
 
     /// Fee adjustment
@@ -42,11 +42,11 @@ struct Cli {
     fee_adjustment: u32,
 
     /// Past epochs to take into account when calculating new fees
-    #[clap(short, long, default_value_t = 1)]
+    #[clap(short = 'e', long, default_value_t = 7)]
     epochs: u32,
 
     /// The length of an epoch in seconds
-    #[clap(long, default_value_t = 12000, value_name = "SECONDS")]
+    #[clap(short = 'E', long, default_value_t = 12, value_name = "HOURS")]
     epoch_length: u32,
 }
 
@@ -102,7 +102,7 @@ async fn main() -> Result<()> {
             &mut db,
         )
         .await?;
-        tokio::time::sleep(std::time::Duration::from_secs(cli.epoch_length.into())).await;
+        tokio::time::sleep(std::time::Duration::from_secs(600)).await;
     }
 }
 async fn iterate(
@@ -122,7 +122,7 @@ async fn iterate(
         .await;
         if let Ok(last_values) = query_last_channel_values(&id, epochs, db).await {
             if let Some((last_updated, _, _)) = last_values.get(0) {
-                if last_updated > &(Utc::now() - Duration::seconds(epoch_length as i64)).timestamp()
+                if last_updated > &(Utc::now() - Duration::hours(epoch_length.into())).timestamp()
                 {
                     continue;
                 }
@@ -158,7 +158,7 @@ async fn new_fee(
         (average_fee, average_revenue)
     } else {
         // Starting fee
-        return 1000;
+        return 500;
     };
 
     return if current_revenue > last_revenue {

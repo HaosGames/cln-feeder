@@ -9,7 +9,7 @@ pub async fn get_revenue_since(
     short_channel_id: ShortChannelId,
     client: &mut ClnRpc,
 ) -> u64 {
-    let last_updated = (Utc::now() + Duration::seconds(epoch_length.into())).timestamp() as f64;
+    let last_updated = (Utc::now() + Duration::hours(epoch_length.into())).timestamp() as f64;
     let mut revenue = 0;
     if let Response::ListForwards(forwards) = client
         .call(Request::ListForwards(ListforwardsRequest {
