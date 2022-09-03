@@ -94,24 +94,46 @@ async fn main() -> Result<()> {
 
     loop {
         debug!("New Iteration");
-        iterate(cli.epochs, cli.epoch_length, cli.fee_adjustment, &mut client, &mut db).await?;
+        iterate(
+            cli.epochs,
+            cli.epoch_length,
+            cli.fee_adjustment,
+            &mut client,
+            &mut db,
+        )
+        .await?;
         tokio::time::sleep(std::time::Duration::from_secs(cli.epoch_length.into())).await;
     }
 }
-async fn iterate(epochs: u32, epoch_length: u32, fee_adjustment: u32, client: &mut ClnRpc, db: &mut SqliteConnection) -> Result<()> {
+async fn iterate(
+    epochs: u32,
+    epoch_length: u32,
+    fee_adjustment: u32,
+    client: &mut ClnRpc,
+    db: &mut SqliteConnection,
+) -> Result<()> {
     let current_fees = get_current_fees(client).await;
     for (id, current_fee) in current_fees {
-        let current_revenue =
-            get_revenue_since(epoch_length, ShortChannelId::from_str(id.as_str()).unwrap(), client).await;
+        let current_revenue = get_revenue_since(
+            epoch_length,
+            ShortChannelId::from_str(id.as_str()).unwrap(),
+            client,
+        )
+        .await;
         if let Ok(last_values) = query_last_channel_values(&id, epochs, db).await {
             if let Some((last_updated, _, _)) = last_values.get(0) {
-                if last_updated
-                    > &(Utc::now() - Duration::seconds(epoch_length as i64)).timestamp()
+                if last_updated > &(Utc::now() - Duration::seconds(epoch_length as i64)).timestamp()
                 {
                     continue;
                 }
             }
-            let new_fee = new_fee(last_values, current_fee, current_revenue as u32, fee_adjustment).await;
+            let new_fee = new_fee(
+                last_values,
+                current_fee,
+                current_revenue as u32,
+                fee_adjustment,
+            )
+            .await;
             info!("New fee {} -> {} msats for {}", current_fee, new_fee, id);
             // TODO set new fee
         }

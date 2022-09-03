@@ -1,1 +1,0 @@
-CREATE TABLE IF NOT EXISTS channels (short_channel_id, last_fee, last_revenue, last_updated, PRIMARY KEY (short_channel_id, last_updated))

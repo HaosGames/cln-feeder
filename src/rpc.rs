@@ -4,9 +4,12 @@ use cln_rpc::primitives::ShortChannelId;
 use cln_rpc::ClnRpc;
 use std::collections::HashMap;
 
-pub async fn get_revenue_since(epoch_length: u32, short_channel_id: ShortChannelId, client: &mut ClnRpc) -> u64 {
-    let last_updated =
-        (Utc::now() + Duration::seconds(epoch_length.into())).timestamp() as f64;
+pub async fn get_revenue_since(
+    epoch_length: u32,
+    short_channel_id: ShortChannelId,
+    client: &mut ClnRpc,
+) -> u64 {
+    let last_updated = (Utc::now() + Duration::seconds(epoch_length.into())).timestamp() as f64;
     let mut revenue = 0;
     if let Response::ListForwards(forwards) = client
         .call(Request::ListForwards(ListforwardsRequest {
