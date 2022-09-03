@@ -141,7 +141,7 @@ async fn new_fee(
 
     return if current_revenue > last_revenue {
         if current_fee > last_fee {
-            current_fee + (current_fee - last_fee)
+            current_fee + (current_fee - last_fee) * 2
         } else if current_fee < last_fee {
             current_fee + (last_fee - current_fee) / 2
         } else {
@@ -151,7 +151,7 @@ async fn new_fee(
         if current_fee > last_fee {
             current_fee - (current_fee - last_fee) / 2
         } else if current_fee < last_fee {
-            current_fee - (last_fee - current_fee)
+            current_fee - (last_fee - current_fee) * 2
         } else {
             current_fee - fee_adjustment_msats
         }
