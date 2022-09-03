@@ -166,29 +166,22 @@ async fn new_fee(
         return 500;
     };
 
-    if current_revenue > last_revenue {
-        if current_fee > last_fee {
-            current_fee + (current_fee - last_fee) * 2
-        } else if current_fee < last_fee {
-            current_fee + (last_fee - current_fee) / 2
-        } else {
-            current_fee + fee_adjustment_msats
-        }
-    } else if current_revenue < last_revenue {
-        if current_fee > last_fee {
-            current_fee - (current_fee - last_fee) / 2
-        } else if current_fee < last_fee {
-            current_fee - (last_fee - current_fee) * 2
-        } else {
-            current_fee - fee_adjustment_msats
-        }
-    } else {
-        if current_fee > last_fee {
-            current_fee
-        } else if current_fee < last_fee {
-            last_fee
-        } else {
-            current_fee + fee_adjustment_msats
-        }
+    use std::cmp::Ordering;
+    match current_revenue.cmp(&last_revenue) {
+        Ordering::Less => match current_fee.cmp(&last_fee) {
+            Ordering::Less => current_fee - (last_fee - current_fee) * 2,
+            Ordering::Equal => current_fee - fee_adjustment_msats,
+            Ordering::Greater => current_fee - (current_fee - last_fee) / 2,
+        },
+        Ordering::Equal => match current_fee.cmp(&last_fee) {
+            Ordering::Less => last_fee,
+            Ordering::Equal => current_fee + fee_adjustment_msats,
+            Ordering::Greater => current_fee,
+        },
+        Ordering::Greater => match current_fee.cmp(&last_fee) {
+            Ordering::Less => current_fee + (last_fee - current_fee) / 2,
+            Ordering::Equal => current_fee + fee_adjustment_msats,
+            Ordering::Greater => current_fee + (current_fee - last_fee) * 2,
+        },
     }
 }
