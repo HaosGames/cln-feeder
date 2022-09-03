@@ -21,9 +21,15 @@ struct Cli {
     #[clap(short, long, value_parser, value_name = "PATH")]
     socket: PathBuf,
 
-    /// Path to the data directory that feeder uses.
-    #[clap(short, long, value_parser, value_name = "PATH", default_value_t = String::from("~/.config/cln-feeder/cln-feeder.sqlite"))]
-    database: String,
+    /// Path to the data directory that feeder uses
+    #[clap(
+        short,
+        long,
+        value_parser,
+        value_name = "PATH",
+        default_value = "~/.local/cln-feeder/"
+    )]
+    data_dir: PathBuf,
 
     /// Use a temporary sqlite database stored in memory
     #[clap(short, long, action)]
@@ -79,17 +85,17 @@ async fn main() -> Result<()> {
         .await
         .expect("Couldn't connect to RPC Socket");
 
-    let sqlite_conn = if cli.temp_database {
-        String::from("sqlite::memory:")
-    } else {
-        if tokio::fs::File::open(cli.database.clone()).await.is_err() {
-            tokio::fs::File::create(cli.database.clone()).await.unwrap();
-        }
-        cli.database
-    };
+    let db_path = cli.data_dir.join("./feeder.sqlite");
 
-    info!("Connecting to database {}", sqlite_conn.clone());
-    let mut db = SqliteConnection::connect(sqlite_conn.as_str()).await?;
+    info!("Connecting to database {:?}", db_path);
+    let mut db = if cli.temp_database {
+        SqliteConnection::connect("sqlite::memory:").await?
+    } else {
+        if tokio::fs::File::open(db_path.clone()).await.is_err() {
+            tokio::fs::File::create(db_path.clone()).await.unwrap();
+        }
+        SqliteConnection::connect(db_path.to_str().unwrap()).await?
+    };
     create_table(&mut db).await.expect("Couldn't create table");
 
     loop {
@@ -121,9 +127,8 @@ async fn iterate(
         )
         .await;
         if let Ok(last_values) = query_last_channel_values(&id, epochs, db).await {
-            if let Some((last_updated, _, _)) = last_values.get(0) {
-                if last_updated > &(Utc::now() - Duration::hours(epoch_length.into())).timestamp()
-                {
+            if let Some((last_updated, _, _)) = last_values.first() {
+                if last_updated > &(Utc::now() - Duration::hours(epoch_length.into())).timestamp() {
                     continue;
                 }
             }
@@ -161,7 +166,7 @@ async fn new_fee(
         return 500;
     };
 
-    return if current_revenue > last_revenue {
+    if current_revenue > last_revenue {
         if current_fee > last_fee {
             current_fee + (current_fee - last_fee) * 2
         } else if current_fee < last_fee {
@@ -185,5 +190,5 @@ async fn new_fee(
         } else {
             current_fee + fee_adjustment_msats
         }
-    };
+    }
 }
