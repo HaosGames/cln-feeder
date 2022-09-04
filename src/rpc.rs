@@ -2,8 +2,8 @@ use chrono::{Duration, Utc};
 use cln_rpc::model::*;
 use cln_rpc::primitives::ShortChannelId;
 use cln_rpc::ClnRpc;
-use std::collections::HashMap;
 use log::{debug, error};
+use std::collections::HashMap;
 
 pub async fn get_revenue_since(
     epoch_length: u32,
@@ -61,13 +61,16 @@ pub async fn get_current_fees(client: &mut ClnRpc) -> HashMap<String, u32> {
     fees
 }
 pub async fn set_channel_fee(client: &mut ClnRpc, channel: &String, fee: u32) {
-    match client.call(Request::SetChannel(SetChannelRequest{
-        id: channel.clone(),
-        feebase: None,
-        feeppm: Some(fee),
-        htlcmin_masat: None,
-        htlcmax_msat: None
-    })).await {
+    match client
+        .call(Request::SetChannel(SetChannelRequest {
+            id: channel.clone(),
+            feebase: None,
+            feeppm: Some(fee),
+            htlcmin_masat: None,
+            htlcmax_msat: None,
+        }))
+        .await
+    {
         Ok(response) => {
             if let Response::SetChannel(_channels) = response {
                 debug!("Set fee {} msats for {}", fee, channel);

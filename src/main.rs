@@ -10,7 +10,7 @@ use cln_rpc::primitives::ShortChannelId;
 use cln_rpc::ClnRpc;
 use env_logger::WriteStyle;
 use log::{debug, error, info, LevelFilter};
-use sqlx::{Connection, SqliteConnection};
+use rusqlite::Connection;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -89,19 +89,14 @@ async fn main() -> Result<()> {
 
     info!("Connecting to database {:?}", db_path);
     let mut db = if cli.temp_database {
-        SqliteConnection::connect("sqlite::memory:").await?
+        Connection::open_in_memory()?
     } else {
         tokio::fs::create_dir_all(cli.data_dir)
             .await
             .expect("Couldn't create data dir");
-        if tokio::fs::File::open(db_path.clone()).await.is_err() {
-            tokio::fs::File::create(db_path.clone())
-                .await
-                .expect("Couldn't create database file");
-        }
-        SqliteConnection::connect(db_path.to_str().unwrap()).await?
+        Connection::open(db_path)?
     };
-    create_table(&mut db).await.expect("Couldn't create table");
+    create_table(&mut db).expect("Couldn't create table");
 
     loop {
         debug!("New Iteration");
@@ -121,7 +116,7 @@ async fn iterate(
     epoch_length: u32,
     fee_adjustment: u32,
     client: &mut ClnRpc,
-    db: &mut SqliteConnection,
+    db: &mut Connection,
 ) -> Result<()> {
     let current_fees = get_current_fees(client).await;
     for (id, current_fee) in current_fees {
@@ -131,27 +126,34 @@ async fn iterate(
             client,
         )
         .await;
-        match query_last_channel_values(&id, epochs, db).await {
+        match query_last_channel_values(&id, epochs, db) {
             Ok(last_values) => {
                 if let Some((last_updated, _, _)) = last_values.first() {
-                    if last_updated > &(Utc::now() - Duration::hours(epoch_length.into())).timestamp() {
-                        debug!("Skipped iteration for {} because current epoch is still ongoing", id);
+                    if last_updated
+                        > &(Utc::now() - Duration::hours(epoch_length.into())).timestamp()
+                    {
+                        debug!(
+                            "Skipped iteration for {} because current epoch is still ongoing",
+                            id
+                        );
                         continue;
                     }
                 }
-                let new_fee = new_fee(
+                if let Some(new_fee) = new_fee(
                     last_values,
                     current_fee,
                     current_revenue as u32,
                     fee_adjustment,
                 )
-                    .await;
-                info!("New fee {} -> {} msats for {}", current_fee, new_fee, id);
-                set_channel_fee(client, &id, new_fee).await;
+                .await
+                {
+                    info!("New fee {} -> {} msats for {}", current_fee, new_fee, id);
+                    set_channel_fee(client, &id, new_fee).await;
+                }
             }
             Err(e) => error!("Couldn't query last values for {}: {}", id, e),
         }
-        store_current_values(db, &id, current_fee, current_revenue as u32).await?;
+        store_current_values(db, id, current_fee, current_revenue as u32)?;
     }
     Ok(())
 }
@@ -160,7 +162,7 @@ async fn new_fee(
     current_fee: u32,
     current_revenue: u32,
     fee_adjustment_msats: u32,
-) -> u32 {
+) -> Option<u32> {
     let (last_fee, last_revenue) = if !last_values.is_empty() {
         let (mut average_fee, mut average_revenue) = (0u32, 0u32);
         for (_time, fee, revenue) in &last_values {
@@ -172,11 +174,11 @@ async fn new_fee(
         (average_fee, average_revenue)
     } else {
         // Starting fee
-        return 500;
+        return None;
     };
 
     use std::cmp::Ordering;
-    match current_revenue.cmp(&last_revenue) {
+    let new_fee = match current_revenue.cmp(&last_revenue) {
         Ordering::Less => match current_fee.cmp(&last_fee) {
             Ordering::Less => current_fee - (last_fee - current_fee) * 2,
             Ordering::Equal => current_fee - fee_adjustment_msats,
@@ -192,5 +194,6 @@ async fn new_fee(
             Ordering::Equal => current_fee + fee_adjustment_msats,
             Ordering::Greater => current_fee + (current_fee - last_fee) * 2,
         },
-    }
+    };
+    Some(new_fee)
 }
