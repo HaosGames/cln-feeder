@@ -9,7 +9,7 @@ use clap::Parser;
 use cln_rpc::primitives::ShortChannelId;
 use cln_rpc::ClnRpc;
 use env_logger::WriteStyle;
-use log::{debug, info, LevelFilter};
+use log::{debug, error, info, LevelFilter};
 use sqlx::{Connection, SqliteConnection};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -51,7 +51,7 @@ struct Cli {
     #[clap(short = 'e', long, default_value_t = 7)]
     epochs: u32,
 
-    /// The length of an epoch in seconds
+    /// The length of an epoch in hours
     #[clap(short = 'E', long, default_value_t = 12, value_name = "HOURS")]
     epoch_length: u32,
 }
@@ -131,21 +131,25 @@ async fn iterate(
             client,
         )
         .await;
-        if let Ok(last_values) = query_last_channel_values(&id, epochs, db).await {
-            if let Some((last_updated, _, _)) = last_values.first() {
-                if last_updated > &(Utc::now() - Duration::hours(epoch_length.into())).timestamp() {
-                    continue;
+        match query_last_channel_values(&id, epochs, db).await {
+            Ok(last_values) => {
+                if let Some((last_updated, _, _)) = last_values.first() {
+                    if last_updated > &(Utc::now() - Duration::hours(epoch_length.into())).timestamp() {
+                        debug!("Skipped iteration for {} because current epoch is still ongoing", id);
+                        continue;
+                    }
                 }
+                let new_fee = new_fee(
+                    last_values,
+                    current_fee,
+                    current_revenue as u32,
+                    fee_adjustment,
+                )
+                    .await;
+                info!("New fee {} -> {} msats for {}", current_fee, new_fee, id);
+                set_channel_fee(client, &id, new_fee).await;
             }
-            let new_fee = new_fee(
-                last_values,
-                current_fee,
-                current_revenue as u32,
-                fee_adjustment,
-            )
-            .await;
-            info!("New fee {} -> {} msats for {}", current_fee, new_fee, id);
-            set_channel_fee(client, &id, new_fee).await;
+            Err(e) => error!("Couldn't query last values for {}: {}", id, e),
         }
         store_current_values(db, &id, current_fee, current_revenue as u32).await?;
     }

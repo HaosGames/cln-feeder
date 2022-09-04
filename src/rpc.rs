@@ -3,7 +3,7 @@ use cln_rpc::model::*;
 use cln_rpc::primitives::ShortChannelId;
 use cln_rpc::ClnRpc;
 use std::collections::HashMap;
-use log::debug;
+use log::{debug, error};
 
 pub async fn get_revenue_since(
     epoch_length: u32,
@@ -61,13 +61,18 @@ pub async fn get_current_fees(client: &mut ClnRpc) -> HashMap<String, u32> {
     fees
 }
 pub async fn set_channel_fee(client: &mut ClnRpc, channel: &String, fee: u32) {
-    if let Err(e) = client.call(Request::SetChannel(SetChannelRequest{
+    match client.call(Request::SetChannel(SetChannelRequest{
         id: channel.clone(),
         feebase: None,
         feeppm: Some(fee),
         htlcmin_masat: None,
         htlcmax_msat: None
     })).await {
-        debug!("Couldn't set new fee for channel {}: {:?}", channel, e);
+        Ok(response) => {
+            if let Response::SetChannel(_channels) = response {
+                debug!("Set fee {} msats for {}", fee, channel);
+            }
+        }
+        Err(e) => error!("Couldn't set new fee for channel {}: {:?}", channel, e),
     }
 }

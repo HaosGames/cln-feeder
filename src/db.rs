@@ -1,5 +1,6 @@
 use anyhow::Result;
 use chrono::Utc;
+use log::debug;
 use sqlx::{query, Executor, Row, SqliteConnection};
 
 pub async fn store_current_values(
@@ -18,6 +19,7 @@ pub async fn store_current_values(
         now,
     ))
     .await?;
+    debug!("Stored [fee: {} msats, revenue: {} msats] for {}", fee, revenue, id);
     Ok(())
 }
 pub async fn create_table(db: &mut SqliteConnection) -> Result<()> {
