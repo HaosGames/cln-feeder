@@ -2,7 +2,7 @@ mod db;
 mod rpc;
 
 use crate::db::{create_table, query_last_channel_values, store_current_values};
-use crate::rpc::{get_current_fees, get_revenue_since};
+use crate::rpc::{get_current_fees, get_revenue_since, set_channel_fee};
 use anyhow::Result;
 use chrono::{Duration, Utc};
 use clap::Parser;
@@ -145,7 +145,7 @@ async fn iterate(
             )
             .await;
             info!("New fee {} -> {} msats for {}", current_fee, new_fee, id);
-            // TODO set new fee
+            set_channel_fee(client, &id, new_fee).await;
         }
         store_current_values(db, &id, current_fee, current_revenue as u32).await?;
     }
