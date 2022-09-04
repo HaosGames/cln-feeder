@@ -29,6 +29,7 @@
             openssl
             perl
             rustfmt
+            sqlite
           ];
 
           nativeBuildInputs = with pkgs; [
