@@ -45,7 +45,7 @@ in
         default = 12;
         description = "The length of an epoch in hours";
       };
-      extraConfig = mkOption {
+      extraArgs = mkOption {
         type = types.str;
         default = "";
         description = "Extra cli arguments appended to the command executing the binary";
@@ -54,7 +54,7 @@ in
   };
   config =
   let
-    executionCommand = "${cfg.package}/bin/cln-feeder --data-dir=${cfg.dataDir} --socket=${cfg.socket} --epochs=${cfg.epochs} --epoch-length=${cfg.epochLength} --fee-adjustment=${cfg.feeAdjustment}";
+    executionCommand = "${cfg.package}/bin/cln-feeder --data-dir=${cfg.dataDir} --socket=${cfg.socket} --epochs=${cfg.epochs} --epoch-length=${cfg.epochLength} --fee-adjustment=${cfg.feeAdjustment} ${cfg.extraArgs}";
   in
   mkIf cfg.enable {
     systemd.services.cln-feeder = {
