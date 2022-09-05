@@ -77,7 +77,10 @@
           imports = [
             ./nix/modules/cln-feeder-service.nix
           ];
-          pkgs.${projectName} = self.packages.${system}.${projectName};
+          nixpkgs.overlays = [ self.overlays.${system}.default ];
+        };
+        overlays.default = final: prev: {
+          ${projectName} = self.packages.${final.hostPlattform.system}.${projectName};
         };
       });
 }
