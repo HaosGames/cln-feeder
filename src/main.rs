@@ -200,7 +200,17 @@ async fn new_fee(
         },
         Ordering::Equal => match current_fee.cmp(&last_fee) {
             Ordering::Less => last_fee,
-            Ordering::Equal => current_fee + fee_adjustment_msats,
+            Ordering::Equal => {
+                if current_revenue == 0 {
+                    if current_fee == 0 {
+                        fee_adjustment_msats
+                    } else {
+                        current_fee - fee_adjustment_msats
+                    }
+                } else {
+                    current_fee + fee_adjustment_msats
+                }
+            }
             Ordering::Greater => current_fee,
         },
         Ordering::Greater => match current_fee.cmp(&last_fee) {
