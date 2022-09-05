@@ -8,7 +8,7 @@ use chrono::{Duration, Utc};
 use clap::Parser;
 use cln_rpc::primitives::ShortChannelId;
 use cln_rpc::ClnRpc;
-use env_logger::WriteStyle;
+use env_logger::{TimestampPrecision, WriteStyle};
 use log::{debug, error, info, LevelFilter};
 use rusqlite::Connection;
 use std::path::PathBuf;
@@ -69,13 +69,13 @@ async fn main() -> Result<()> {
     let _ = if cli.log_filter.as_str() != "" {
         env_logger::builder()
             .write_style(WriteStyle::Always)
-            .format_timestamp(None)
+            .format_timestamp(Some(TimestampPrecision::Seconds))
             .filter_module(cli.log_filter.as_str(), level)
             .init();
     } else {
         env_logger::builder()
             .write_style(WriteStyle::Always)
-            .format_timestamp(None)
+            .format_timestamp(Some(TimestampPrecision::Seconds))
             .filter_level(level)
             .init();
     };
