@@ -54,7 +54,7 @@ in
   };
   config =
   let
-    executionCommand = "${cfg.package}/bin/cln-feeder --data-dir=${cfg.dataDir} --socket=${cfg.socket} --epochs=${cfg.epochs} --epoch-length=${cfg.epochLength} --fee-adjustment=${cfg.feeAdjustment} ${cfg.extraArgs}";
+    executionCommand = "${cfg.package}/bin/cln-feeder --data-dir=${cfg.dataDir} --socket=${cfg.socket} --epochs=${toString cfg.epochs} --epoch-length=${toString cfg.epochLength} --fee-adjustment=${toString cfg.feeAdjustment} ${cfg.extraArgs}";
   in
   mkIf cfg.enable {
     systemd.services.cln-feeder = {
@@ -67,7 +67,6 @@ in
         User = cfg.user;
         Group = cfg.group;
         WorkingDirectory = cfg.package.src;
-        StateDirectory = cfg.dataDir;
         ExecStart = executionCommand;
         Restart = "always";
         RestartSec = "10s";
