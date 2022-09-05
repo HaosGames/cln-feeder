@@ -9,7 +9,7 @@ use clap::Parser;
 use cln_rpc::primitives::ShortChannelId;
 use cln_rpc::ClnRpc;
 use env_logger::{TimestampPrecision, WriteStyle};
-use log::{debug, error, info, LevelFilter};
+use log::{debug, info, trace, LevelFilter};
 use rusqlite::Connection;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -89,14 +89,14 @@ async fn main() -> Result<()> {
 
     info!("Connecting to database {:?}", db_path);
     let mut db = if cli.temp_database {
-        Connection::open_in_memory()?
+        Connection::open_in_memory().expect("Couldn't open database in memory")
     } else {
         tokio::fs::create_dir_all(cli.data_dir)
             .await
             .expect("Couldn't create data dir");
-        Connection::open(db_path)?
+        Connection::open(db_path).expect("Couldn't open database")
     };
-    create_table(&mut db).expect("Couldn't create table");
+    create_table(&mut db);
 
     loop {
         debug!("New Iteration");
@@ -107,7 +107,7 @@ async fn main() -> Result<()> {
             &mut client,
             &mut db,
         )
-        .await?;
+        .await;
         tokio::time::sleep(std::time::Duration::from_secs(600)).await;
     }
 }
@@ -117,7 +117,7 @@ async fn iterate(
     fee_adjustment: u32,
     client: &mut ClnRpc,
     db: &mut Connection,
-) -> Result<()> {
+) {
     let current_fees = get_current_fees(client).await;
     for (id, current_fee) in current_fees {
         let current_revenue = get_revenue_since(
@@ -126,36 +126,36 @@ async fn iterate(
             client,
         )
         .await;
-        match query_last_channel_values(&id, epochs, db) {
-            Ok(last_values) => {
-                if let Some((last_updated, _, _)) = last_values.first() {
-                    if last_updated
-                        > &(Utc::now() - Duration::hours(epoch_length.into())).timestamp()
-                    {
-                        debug!(
-                            "Skipped iteration for {} because current epoch is still ongoing",
-                            id
-                        );
-                        continue;
-                    }
-                }
-                if let Some(new_fee) = new_fee(
-                    last_values,
-                    current_fee,
-                    current_revenue as u32,
-                    fee_adjustment,
-                )
-                .await
-                {
-                    info!("New fee {} -> {} msats for {}", current_fee, new_fee, id);
-                    set_channel_fee(client, &id, new_fee).await;
-                }
+        trace!(
+            "Current values for {}:[fee: {}, revenue: {}]",
+            id,
+            current_fee,
+            current_revenue
+        );
+        let last_values = query_last_channel_values(&id, epochs, db);
+        trace!("Queried last channel values for {}", id);
+        if let Some((last_updated, _, _)) = last_values.first() {
+            if last_updated > &(Utc::now() - Duration::hours(epoch_length.into())).timestamp() {
+                trace!(
+                    "Skipped iteration for {} because current epoch is still ongoing",
+                    id
+                );
+                continue;
             }
-            Err(e) => error!("Couldn't query last values for {}: {}", id, e),
         }
-        store_current_values(db, id, current_fee, current_revenue as u32)?;
+        if let Some(new_fee) = new_fee(
+            last_values,
+            current_fee,
+            current_revenue as u32,
+            fee_adjustment,
+        )
+        .await
+        {
+            info!("New fee {} -> {} msats for {}", current_fee, new_fee, id);
+            set_channel_fee(client, &id, new_fee).await;
+        }
+        store_current_values(db, id, current_fee, current_revenue as u32);
     }
-    Ok(())
 }
 async fn new_fee(
     last_values: Vec<(i64, u32, u32)>,
@@ -171,9 +171,23 @@ async fn new_fee(
         }
         average_fee /= last_values.len() as u32;
         average_revenue /= last_values.len() as u32;
+        if last_values.len() > 1 {
+            trace!(
+                "Last average values: [fee: {}, revenue: {}]",
+                average_fee,
+                average_revenue
+            );
+        } else {
+            trace!(
+                "Last values: [fee: {}, revenue: {}]",
+                average_fee,
+                average_revenue
+            );
+        }
         (average_fee, average_revenue)
     } else {
         // Starting fee
+        trace!("No last values -> No new fee");
         return None;
     };
 

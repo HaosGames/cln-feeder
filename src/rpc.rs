@@ -2,7 +2,7 @@ use chrono::{Duration, Utc};
 use cln_rpc::model::*;
 use cln_rpc::primitives::ShortChannelId;
 use cln_rpc::ClnRpc;
-use log::{debug, error};
+use log::debug;
 use std::collections::HashMap;
 
 pub async fn get_revenue_since(
@@ -19,7 +19,7 @@ pub async fn get_revenue_since(
             out_channel: Some(short_channel_id),
         }))
         .await
-        .unwrap()
+        .expect("Couldn't get current revenue")
     {
         for payment in forwards.forwards {
             if payment.received_time > last_updated {
@@ -36,7 +36,7 @@ pub async fn get_current_peers(client: &mut ClnRpc) -> Vec<ListpeersPeers> {
             level: None,
         }))
         .await
-        .unwrap()
+        .expect("Couldn't get peers")
     {
         peers.peers
     } else {
@@ -61,7 +61,7 @@ pub async fn get_current_fees(client: &mut ClnRpc) -> HashMap<String, u32> {
     fees
 }
 pub async fn set_channel_fee(client: &mut ClnRpc, channel: &String, fee: u32) {
-    match client
+    client
         .call(Request::SetChannel(SetChannelRequest {
             id: channel.clone(),
             feebase: None,
@@ -70,12 +70,6 @@ pub async fn set_channel_fee(client: &mut ClnRpc, channel: &String, fee: u32) {
             htlcmax_msat: None,
         }))
         .await
-    {
-        Ok(response) => {
-            if let Response::SetChannel(_channels) = response {
-                debug!("Set fee {} msats for {}", fee, channel);
-            }
-        }
-        Err(e) => error!("Couldn't set new fee for channel {}: {:?}", channel, e),
-    }
+        .expect("Couldn't set new fee");
+    debug!("Set fee {} msats for {}", fee, channel);
 }
