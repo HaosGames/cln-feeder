@@ -65,32 +65,20 @@
         cln-feeder = craneLib.buildPackage (commonArgs // {
           inherit cargoArtifacts;
         });
-
-        # Also run the crate tests under cargo-tarpaulin so that we can keep
-        # track of code coverage
-        cln-feederCrateCoverage = craneLib.cargoTarpaulin (commonArgs // {
-          inherit cargoArtifacts;
-        });
       in
       {
         packages.default = cln-feeder;
         checks = {
          inherit
            # Build the crate as part of `nix flake check` for convenience
-           cln-feeder
-           cln-feederClippy
-           cln-feederCrateCoverage;
+           cln-feeder;
         };
-#        nixosModules.default = { pkgs, lib, config, ...}: {
-#          imports = [
-#            ./nix/modules/watchtower-plugin.nix
-#            ./nix/modules/teos-service.nix
-#          ];
-#          nixpkgs.overlays = [ self.overlays.default ];
-#        };
-#        overlays.default = final: prev: {
-#          ${projectName} = self.packages.${final.hostPlattform.system}.${projectName};
-#        };
+        nixosModules.default = { pkgs, lib, config, ...}: {
+          imports = [
+            ./nix/modules/cln-feeder-service.nix
+          ];
+          pkgs.${projectName} = self.packages.${system}.${projectName};
+        };
       });
 }
 

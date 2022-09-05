@@ -7,7 +7,7 @@ pub fn store_current_values(db: &mut Connection, id: String, fee: u32, revenue: 
     db.execute(
         "INSERT OR REPLACE INTO channels (short_channel_id, last_fee, last_revenue, last_updated)\
                      VALUES (?1, ?2, ?3, ?4)",
-        (id.clone(), fee.clone(), revenue.clone(), now),
+        (id.clone(), fee, revenue, now),
     )
     .expect("Couldn't store current values");
     debug!(

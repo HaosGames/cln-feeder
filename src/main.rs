@@ -48,7 +48,7 @@ struct Cli {
     fee_adjustment: u32,
 
     /// Past epochs to take into account when calculating new fees
-    #[clap(short = 'e', long, default_value_t = 7)]
+    #[clap(short = 'e', long, default_value_t = 1)]
     epochs: u32,
 
     /// The length of an epoch in hours
