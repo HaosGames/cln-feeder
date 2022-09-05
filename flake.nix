@@ -80,7 +80,7 @@
           nixpkgs.overlays = [ self.overlays.${system}.default ];
         };
         overlays.default = final: prev: {
-          ${projectName} = self.packages.${system}.${projectName};
+          ${projectName} = self.packages.${system}.default;
         };
       });
 }
