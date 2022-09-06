@@ -198,26 +198,29 @@ async fn new_fee(
             Ordering::Equal => current_fee - fee_adjustment_msats,
             Ordering::Greater => current_fee - (current_fee - last_fee) / 2,
         },
-        Ordering::Equal => match current_fee.cmp(&last_fee) {
-            Ordering::Less => last_fee,
-            Ordering::Equal => {
-                if current_revenue == 0 {
-                    if current_fee == 0 {
-                        fee_adjustment_msats
-                    } else {
-                        current_fee - fee_adjustment_msats
-                    }
-                } else {
-                    current_fee + fee_adjustment_msats
+        Ordering::Equal => {
+            if current_revenue == 0 {
+                match current_fee.cmp(&last_fee) {
+                    Ordering::Less => current_fee - (last_fee - current_fee) * 2,
+                    Ordering::Equal => current_fee - fee_adjustment_msats,
+                    Ordering::Greater => last_fee - fee_adjustment_msats,
+                }
+            } else {
+                match current_fee.cmp(&last_fee) {
+                    Ordering::Less => last_fee,
+                    Ordering::Equal => current_fee,
+                    Ordering::Greater => current_fee,
                 }
             }
-            Ordering::Greater => current_fee,
-        },
+        }
         Ordering::Greater => match current_fee.cmp(&last_fee) {
             Ordering::Less => current_fee + (last_fee - current_fee) / 2,
             Ordering::Equal => current_fee + fee_adjustment_msats,
             Ordering::Greater => current_fee + (current_fee - last_fee) * 2,
         },
     };
+    if new_fee > 100000 || new_fee == 0 {
+        return Some(1);
+    }
     Some(new_fee)
 }

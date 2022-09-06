@@ -37,12 +37,12 @@ in
       };
       epochs = mkOption {
         type = types.ints.positive;
-        default = 1;
+        default = 3;
         description = "Past epochs to take into account when calculating new fees";
       };
       epochLength = mkOption {
         type = types.ints.positive;
-        default = 12;
+        default = 24;
         description = "The length of an epoch in hours";
       };
       extraArgs = mkOption {
