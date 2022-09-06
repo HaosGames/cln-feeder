@@ -30,10 +30,10 @@ in
         default = pkgs.cln-feeder;
         description = "The package providing cln-feeder binaries";
       };
-      feeAdjustment = mkOption {
+      adjustmentDivisor = mkOption {
           type = types.ints.positive;
-          default = 20;
-          description = "Fee adjustment";
+          default = 10;
+          description = "A divisor by which the current fees are divided when an absolute value must be found to calculate the new fees.";
       };
       epochs = mkOption {
         type = types.ints.positive;
@@ -54,7 +54,7 @@ in
   };
   config =
   let
-    executionCommand = "${cfg.package}/bin/cln-feeder --data-dir=${cfg.dataDir} --socket=${cfg.socket} --epochs=${toString cfg.epochs} --epoch-length=${toString cfg.epochLength} --fee-adjustment=${toString cfg.feeAdjustment} ${cfg.extraArgs}";
+    executionCommand = "${cfg.package}/bin/cln-feeder --data-dir=${cfg.dataDir} --socket=${cfg.socket} --epochs=${toString cfg.epochs} --epoch-length=${toString cfg.epochLength} --adjustment-divisor=${toString cfg.adjustmentDivisor} ${cfg.extraArgs}";
   in
   mkIf cfg.enable {
     systemd.services.cln-feeder = {

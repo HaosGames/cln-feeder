@@ -43,16 +43,16 @@ struct Cli {
     #[clap(short, long, default_value_t = String::from("cln_feeder"), value_name = "STRING")]
     log_filter: String,
 
-    /// Fee adjustment
-    #[clap(short, long, default_value_t = 20, value_name = "MSATS")]
-    fee_adjustment: u32,
+    /// A divisor by which the current fees are divided when an absolute value must be found to calculate the new fees.
+    #[clap(short, long, default_value_t = 10, value_name = "UINT")]
+    adjustment_divisor: u32,
 
     /// Past epochs to take into account when calculating new fees
-    #[clap(short = 'e', long, default_value_t = 1)]
+    #[clap(short = 'e', long, default_value_t = 3)]
     epochs: u32,
 
     /// The length of an epoch in hours
-    #[clap(short = 'E', long, default_value_t = 12, value_name = "HOURS")]
+    #[clap(short = 'E', long, default_value_t = 24, value_name = "HOURS")]
     epoch_length: u32,
 }
 
@@ -103,7 +103,7 @@ async fn main() -> Result<()> {
         iterate(
             cli.epochs,
             cli.epoch_length,
-            cli.fee_adjustment,
+            cli.adjustment_divisor,
             &mut client,
             &mut db,
         )
@@ -114,7 +114,7 @@ async fn main() -> Result<()> {
 async fn iterate(
     epochs: u32,
     epoch_length: u32,
-    fee_adjustment: u32,
+    adjustment_divisor: u32,
     client: &mut ClnRpc,
     db: &mut Connection,
 ) {
@@ -147,7 +147,7 @@ async fn iterate(
             last_values,
             current_fee,
             current_revenue as u32,
-            fee_adjustment,
+            adjustment_divisor,
         )
         .await
         {
@@ -161,7 +161,7 @@ async fn new_fee(
     last_values: Vec<(i64, u32, u32)>,
     current_fee: u32,
     current_revenue: u32,
-    fee_adjustment_msats: u32,
+    adjustment_divisor: u32,
 ) -> Option<u32> {
     let (last_fee, last_revenue) = if !last_values.is_empty() {
         let (mut average_fee, mut average_revenue) = (0u32, 0u32);
@@ -186,24 +186,28 @@ async fn new_fee(
         }
         (average_fee, average_revenue)
     } else {
-        // Starting fee
         trace!("No last values -> No new fee");
         return None;
+    };
+    let fee_adjustment = if current_fee / adjustment_divisor == 0 {
+        current_fee / adjustment_divisor
+    } else {
+        1
     };
 
     use std::cmp::Ordering;
     let new_fee = match current_revenue.cmp(&last_revenue) {
         Ordering::Less => match current_fee.cmp(&last_fee) {
             Ordering::Less => current_fee - (last_fee - current_fee) * 2,
-            Ordering::Equal => current_fee - fee_adjustment_msats,
+            Ordering::Equal => current_fee - fee_adjustment,
             Ordering::Greater => current_fee - (current_fee - last_fee) / 2,
         },
         Ordering::Equal => {
             if current_revenue == 0 {
                 match current_fee.cmp(&last_fee) {
                     Ordering::Less => current_fee - (last_fee - current_fee) * 2,
-                    Ordering::Equal => current_fee - fee_adjustment_msats,
-                    Ordering::Greater => last_fee - fee_adjustment_msats,
+                    Ordering::Equal => current_fee - fee_adjustment,
+                    Ordering::Greater => last_fee - fee_adjustment,
                 }
             } else {
                 match current_fee.cmp(&last_fee) {
@@ -215,7 +219,7 @@ async fn new_fee(
         }
         Ordering::Greater => match current_fee.cmp(&last_fee) {
             Ordering::Less => current_fee + (last_fee - current_fee) / 2,
-            Ordering::Equal => current_fee + fee_adjustment_msats,
+            Ordering::Equal => current_fee + fee_adjustment,
             Ordering::Greater => current_fee + (current_fee - last_fee) * 2,
         },
     };
