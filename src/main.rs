@@ -97,6 +97,10 @@ async fn main() -> Result<()> {
         Connection::open(db_path).expect("Couldn't open database")
     };
     create_table(&mut db);
+    assert!(
+        cli.adjustment_divisor != 0,
+        "The divisor must be bigger than 0"
+    );
 
     loop {
         debug!("New Iteration");
@@ -163,14 +167,16 @@ async fn new_fee(
     current_revenue: u32,
     adjustment_divisor: u32,
 ) -> Option<u32> {
+    let (current_fee, current_revenue, adjustment_divisor): (i64, i64, i64) = (current_fee.into(), current_revenue.into(), adjustment_divisor.into());
     let (last_fee, last_revenue) = if !last_values.is_empty() {
-        let (mut average_fee, mut average_revenue) = (0u32, 0u32);
+        let (mut average_fee, mut average_revenue) = (0, 0);
         for (_time, fee, revenue) in &last_values {
             average_fee += fee;
             average_revenue += revenue;
         }
         average_fee /= last_values.len() as u32;
         average_revenue /= last_values.len() as u32;
+        let (average_fee, average_revenue): (i64, i64) = (average_fee.into(), average_revenue.into());
         if last_values.len() > 1 {
             trace!(
                 "Last average values: [fee: {}, revenue: {}]",
@@ -189,7 +195,7 @@ async fn new_fee(
         trace!("No last values -> No new fee");
         return None;
     };
-    let fee_adjustment = if current_fee / adjustment_divisor == 0 {
+    let fee_adjustment = if current_fee / adjustment_divisor != 0 {
         current_fee / adjustment_divisor
     } else {
         1
@@ -205,7 +211,7 @@ async fn new_fee(
         Ordering::Equal => {
             if current_revenue == 0 {
                 match current_fee.cmp(&last_fee) {
-                    Ordering::Less => current_fee - (last_fee - current_fee) * 2,
+                    Ordering::Less => current_fee / 2,
                     Ordering::Equal => current_fee - fee_adjustment,
                     Ordering::Greater => last_fee - fee_adjustment,
                 }
@@ -223,8 +229,29 @@ async fn new_fee(
             Ordering::Greater => current_fee + (current_fee - last_fee) * 2,
         },
     };
-    if new_fee > 100000 || new_fee == 0 {
+    if new_fee <= 0 {
         return Some(1);
     }
-    Some(new_fee)
+    Some(new_fee.try_into().unwrap())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[ignore]
+    #[tokio::test]
+    async fn decrease_when_zero_revenue() {
+        let mut values = vec![(0, 500, 0)];
+        let fee = new_fee(values.clone(), 500, 0, 10).await.unwrap();
+        assert_eq!(fee, 450);
+        values.push((0, 500, 0));
+        let fee = new_fee(values.clone(), fee, 0, 10).await.unwrap();
+        assert_eq!(fee, 225);
+        values.push((0, 450, 0));
+        let fee = new_fee(values.clone(), fee, 100, 10).await.unwrap();
+        assert_eq!(fee, 354);
+        values.push((0, 225, 0));
+        let fee = new_fee(values.clone(), fee, 80, 10).await.unwrap();
+        assert_eq!(fee, 354);
+    }
 }
