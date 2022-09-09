@@ -1,4 +1,3 @@
-use chrono::{Duration, Utc};
 use cln_rpc::model::*;
 use cln_rpc::primitives::ShortChannelId;
 use cln_rpc::ClnRpc;
@@ -6,11 +5,10 @@ use log::debug;
 use std::collections::HashMap;
 
 pub async fn get_revenue_since(
-    epoch_length: u32,
+    last_updated: i64,
     short_channel_id: ShortChannelId,
     client: &mut ClnRpc,
 ) -> u64 {
-    let last_updated = (Utc::now() + Duration::hours(epoch_length.into())).timestamp() as f64;
     let mut revenue = 0;
     if let Response::ListForwards(forwards) = client
         .call(Request::ListForwards(ListforwardsRequest {
@@ -22,7 +20,7 @@ pub async fn get_revenue_since(
         .expect("Couldn't get current revenue")
     {
         for payment in forwards.forwards {
-            if payment.received_time > last_updated {
+            if payment.received_time > last_updated as f64 {
                 revenue += payment.fee_msat.unwrap().msat();
             }
         }

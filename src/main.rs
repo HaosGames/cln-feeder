@@ -48,7 +48,7 @@ struct Cli {
     adjustment_divisor: u32,
 
     /// Past epochs to take into account when calculating new fees
-    #[clap(short = 'e', long, default_value_t = 3)]
+    #[clap(short = 'e', long, default_value_t = 6)]
     epochs: u32,
 
     /// The length of an epoch in hours
@@ -104,7 +104,7 @@ async fn main() -> Result<()> {
     );
 
     loop {
-        debug!("New Iteration");
+        trace!("New Iteration");
         iterate(
             cli.epochs,
             cli.epoch_length,
@@ -125,29 +125,36 @@ async fn iterate(
 ) {
     let current_fees = get_current_fees(client).await;
     for (id, current_fee) in current_fees {
+        let last_values = query_last_channel_values(&id, epochs, db);
+        trace!("Queried last channel values for {}", id);
+
+        let last_updated = {
+            if let Some((last_updated, _, _)) = last_values.first() {
+                if last_updated > &(Utc::now() - Duration::hours(epoch_length.into())).timestamp() {
+                    trace!(
+                        "Skipped iteration for {} because current epoch is still ongoing",
+                        id
+                    );
+                    continue;
+                } else {
+                    *last_updated
+                }
+            } else {
+                (Utc::now() - Duration::hours(epoch_length.into())).timestamp()
+            }
+        };
+
         let current_revenue = get_revenue_since(
-            epoch_length,
+            last_updated,
             ShortChannelId::from_str(id.as_str()).unwrap(),
             client,
         )
         .await;
-        trace!(
-            "Current values for {}:[fee: {}, revenue: {}]",
-            id,
-            current_fee,
-            current_revenue
+        debug!(
+            "Current values for {}:[fee: {}, revenue: {}, last_updated: {}]",
+            id, current_fee, current_revenue, last_updated
         );
-        let last_values = query_last_channel_values(&id, epochs, db);
-        trace!("Queried last channel values for {}", id);
-        if let Some((last_updated, _, _)) = last_values.first() {
-            if last_updated > &(Utc::now() - Duration::hours(epoch_length.into())).timestamp() {
-                trace!(
-                    "Skipped iteration for {} because current epoch is still ongoing",
-                    id
-                );
-                continue;
-            }
-        }
+
         let mut values: Vec<(u32, u32)> = last_values
             .iter()
             .map(|(_, fee, revenue)| (*fee, *revenue))

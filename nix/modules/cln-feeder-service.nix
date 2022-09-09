@@ -37,7 +37,7 @@ in
       };
       epochs = mkOption {
         type = types.ints.positive;
-        default = 3;
+        default = 6;
         description = "Past epochs to take into account when calculating new fees";
       };
       epochLength = mkOption {
