@@ -160,7 +160,7 @@ async fn iterate(
         store_current_values(db, id, current_fee, current_revenue as u32);
     }
 }
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 #[allow(unused)]
 struct NewFees {
     average_fee: i64,
@@ -212,6 +212,7 @@ impl NewFees {
         } else {
             1
         } as i64;
+        debug!("{:?}", p);
         p.determine()
     }
     #[allow(clippy::if_same_then_else)]
