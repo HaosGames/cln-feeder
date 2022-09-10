@@ -11,8 +11,8 @@ pub fn store_current_values(db: &mut Connection, id: String, fee: u32, revenue: 
     )
     .expect("Couldn't store current values");
     debug!(
-        "Stored [fee: {} msats, revenue: {} msats, time: {}] for {}",
-        fee, revenue, id, now
+        "{}: Stored [fee: {} msats, revenue: {} msats, time: {}]",
+        id, fee, revenue, now
     );
 }
 pub fn create_table(db: &mut Connection) {

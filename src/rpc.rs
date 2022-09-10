@@ -69,5 +69,5 @@ pub async fn set_channel_fee(client: &mut ClnRpc, channel: &String, fee: u32) {
         }))
         .await
         .expect("Couldn't set new fee");
-    debug!("Set fee {} msats for {}", fee, channel);
+    debug!("{}: Set fee {} msats", channel, fee);
 }

@@ -126,13 +126,13 @@ async fn iterate(
     let current_fees = get_current_fees(client).await;
     for (id, current_fee) in current_fees {
         let last_values = query_last_channel_values(&id, epochs, db);
-        trace!("Queried last channel values for {}", id);
+        trace!("{}: Queried last channel values", id);
 
         let last_updated = {
             if let Some((last_updated, _, _)) = last_values.first() {
                 if last_updated > &(Utc::now() - Duration::hours(epoch_length.into())).timestamp() {
                     trace!(
-                        "Skipped iteration for {} because current epoch is still ongoing",
+                        "{}: Skipped iteration because current epoch is still ongoing",
                         id
                     );
                     continue;
@@ -151,7 +151,7 @@ async fn iterate(
         )
         .await;
         debug!(
-            "Current values for {}:[fee: {}, revenue: {}, last_updated: {}]",
+            "{}: Current[fee: {}, revenue: {}, last_updated: {}]",
             id, current_fee, current_revenue, last_updated
         );
 
@@ -160,8 +160,8 @@ async fn iterate(
             .map(|(_, fee, revenue)| (*fee, *revenue))
             .collect();
         values.insert(0, (current_fee, current_revenue.try_into().unwrap()));
-        if let Some(new_fee) = NewFees::calculate(&values, adjustment_divisor) {
-            info!("New fee {} -> {} msats for {}", current_fee, new_fee, id);
+        if let Some(new_fee) = NewFees::calculate(&values, adjustment_divisor, &id) {
+            info!("{}: New fee {} -> {} msats", id, current_fee, new_fee);
             set_channel_fee(client, &id, new_fee).await;
         }
         store_current_values(db, id, current_fee, current_revenue as u32);
@@ -170,21 +170,21 @@ async fn iterate(
 #[derive(Default, Clone, Debug)]
 #[allow(unused)]
 struct NewFees {
-    average_fee: i64,
-    average_revenue: i64,
-    present_fee: i64,
-    present_revenue: i64,
     past_fee: i64,
-    past_revenue: i64,
+    average_fee: i64,
+    present_fee: i64,
     current_fee: i64,
+    past_revenue: i64,
+    average_revenue: i64,
+    present_revenue: i64,
     current_revenue: i64,
     adjustment_fee: i64,
 }
 #[allow(unused)]
 impl NewFees {
-    pub fn calculate(values: &Vec<(u32, u32)>, adjustment_divisor: u32) -> Option<u32> {
+    pub fn calculate(values: &Vec<(u32, u32)>, adjustment_divisor: u32, id: &String) -> Option<u32> {
         if values.len() < 2 {
-            trace!("No last values -> No new fee");
+            debug!("{}: No last values -> No new fee", id);
             return None;
         }
         let mut p = Self::default();
@@ -219,7 +219,7 @@ impl NewFees {
         } else {
             1
         } as i64;
-        debug!("{:?}", p);
+        debug!("{}: {:?}", id, p);
         p.determine()
     }
     #[allow(clippy::if_same_then_else)]
