@@ -32,7 +32,7 @@ struct Cli {
     data_dir: PathBuf,
 
     /// Use a temporary sqlite database stored in memory
-    #[clap(short, long, action)]
+    #[clap(short = 't', long, action)]
     temp_database: bool,
 
     /// Log Level
@@ -44,8 +44,13 @@ struct Cli {
     log_filter: String,
 
     /// A divisor by which the current fees are divided when an absolute value must be found to calculate the new fees.
-    #[clap(short, long, default_value_t = 10, value_name = "UINT")]
+    #[clap(short = 'a', long, default_value_t = 10, value_name = "POSITIVE INT")]
     adjustment_divisor: u32,
+
+    /// If the revenue change exceeds the average revenue divided by this divisor
+    /// a new fee for the next epoch will be calculated
+    #[clap(short = 'A', long, default_value_t = 10, value_name = "POSITIVE INT")]
+    trigger_divisor: u32,
 
     /// Past epochs to take into account when calculating new fees
     #[clap(short = 'e', long, default_value_t = 6)]
@@ -102,6 +107,10 @@ async fn main() -> Result<()> {
         cli.adjustment_divisor != 0,
         "The divisor must be bigger than 0"
     );
+    assert!(
+        cli.trigger_divisor != 0,
+        "The divisor must be bigger than 0"
+    );
 
     loop {
         trace!("New Iteration");
@@ -109,6 +118,7 @@ async fn main() -> Result<()> {
             cli.epochs,
             cli.epoch_length,
             cli.adjustment_divisor,
+            cli.trigger_divisor,
             &mut client,
             &mut db,
         )
@@ -120,6 +130,7 @@ async fn iterate(
     epochs: u32,
     epoch_length: u32,
     adjustment_divisor: u32,
+    trigger_divisor: u32,
     client: &mut ClnRpc,
     db: &mut Connection,
 ) {
@@ -160,7 +171,8 @@ async fn iterate(
             .map(|(_, fee, revenue)| (*fee, *revenue))
             .collect();
         values.insert(0, (current_fee, current_revenue.try_into().unwrap()));
-        if let Some(new_fee) = NewFees::calculate(&values, adjustment_divisor, &id) {
+        if let Some(new_fee) = NewFees::calculate(&values, adjustment_divisor, trigger_divisor, &id)
+        {
             info!("{}: New fee {} -> {} msats", id, current_fee, new_fee);
             set_channel_fee(client, &id, new_fee).await;
         }
@@ -168,21 +180,24 @@ async fn iterate(
     }
 }
 #[derive(Default, Clone, Debug)]
-#[allow(unused)]
 struct NewFees {
-    past_fee: i64,
-    average_fee: i64,
-    present_fee: i64,
-    current_fee: i64,
-    past_revenue: i64,
-    average_revenue: i64,
-    present_revenue: i64,
-    current_revenue: i64,
-    adjustment_fee: i64,
+    past_fee: u32,
+    average_fee: u32,
+    present_fee: u32,
+    current_fee: u32,
+    past_revenue: u32,
+    average_revenue: u32,
+    present_revenue: u32,
+    current_revenue: u32,
+    adjustment_fee: u32,
 }
-#[allow(unused)]
 impl NewFees {
-    pub fn calculate(values: &Vec<(u32, u32)>, adjustment_divisor: u32, id: &String) -> Option<u32> {
+    pub fn calculate(
+        values: &Vec<(u32, u32)>,
+        adjustment_divisor: u32,
+        trigger_divisor: u32,
+        id: &String,
+    ) -> Option<u32> {
         if values.len() < 2 {
             debug!("{}: No last values -> No new fee", id);
             return None;
@@ -191,24 +206,24 @@ impl NewFees {
         let (mut first_n, mut last_n) = (0, 0);
         for (i, (fee, revenue)) in values.iter().enumerate() {
             if i <= (values.len() - 1) / 3 {
-                p.present_fee += (*fee) as i64;
-                p.present_revenue += (*revenue) as i64;
+                p.present_fee += *fee;
+                p.present_revenue += *revenue;
                 first_n += 1;
             }
             if i >= 2 * values.len() / 3 {
-                p.past_fee += (*fee) as i64;
-                p.past_revenue += (*revenue) as i64;
+                p.past_fee += *fee;
+                p.past_revenue += *revenue;
                 last_n += 1;
             }
-            p.average_fee += (*fee) as i64;
-            p.average_revenue += (*revenue) as i64;
+            p.average_fee += *fee;
+            p.average_revenue += *revenue;
         }
         p.present_fee /= first_n;
         p.present_revenue /= first_n;
         p.past_fee /= last_n;
         p.past_revenue /= last_n;
-        p.average_fee /= values.len() as i64;
-        p.average_revenue /= values.len() as i64;
+        p.average_fee /= values.len() as u32;
+        p.average_revenue /= values.len() as u32;
 
         let (current_fee, current_revenue) = *values.first().unwrap();
         p.current_fee = current_fee.into();
@@ -218,59 +233,66 @@ impl NewFees {
             current_fee / adjustment_divisor
         } else {
             1
-        } as i64;
+        };
         debug!("{}: {:?}", id, p);
+
+        let trigger_revenue = p.average_revenue.saturating_div(trigger_divisor);
+        if p.present_revenue.abs_diff(p.average_revenue) < trigger_revenue && p.average_revenue != 0
+        {
+            debug!("{}: No new fee. Revenue change wasn't big enough", id);
+            return None;
+        }
         p.determine()
     }
     #[allow(clippy::if_same_then_else)]
     fn determine(&self) -> Option<u32> {
-        let new_fee: i64 = if self.average_revenue == 0 {
+        let new_fee: u32 = if self.average_revenue == 0 {
             self.current_fee / 2
         } else if self.rev_is_rising() {
             if self.fee_is_rising() {
-                self.step_up()
+                self.increase(true)
             } else if self.fee_is_falling() {
-                self.step_down()
+                self.decrease(true)
             } else if self.fee_has_higher_average() {
-                self.adjust_up()
+                self.average_fee
             } else if self.fee_has_lower_average() {
-                self.adjust_up()
+                self.increase(false)
             } else {
                 return None;
             }
         } else if self.rev_is_falling() {
-            if self.fee_is_falling() {
-                self.run_down()
-            } else if self.fee_is_rising() {
-                self.adjust_down()
+            if self.fee_is_rising() {
+                self.decrease(true)
+            } else if self.fee_is_falling() {
+                self.increase(true)
             } else if self.fee_has_higher_average() {
-                self.step_down()
+                self.increase(false)
             } else if self.fee_has_lower_average() {
-                self.adjust_down()
+                self.average_fee
             } else {
                 return None;
             }
         } else if self.rev_has_higher_average() {
             if self.fee_is_rising() {
-                self.adjust_down()
+                self.average_fee
             } else if self.fee_is_falling() {
-                self.adjust_up()
+                self.increase(false)
             } else if self.fee_has_higher_average() {
-                self.adjust_up()
+                self.increase(true)
             } else if self.fee_has_lower_average() {
-                self.adjust_down()
+                self.decrease(true)
             } else {
                 return None;
             }
         } else if self.rev_has_lower_average() {
             if self.fee_is_rising() {
-                return None;
+                self.increase(false)
             } else if self.fee_is_falling() {
-                self.adjust_up()
+                self.average_fee
             } else if self.fee_has_higher_average() {
-                self.step_down()
+                self.decrease(true)
             } else if self.fee_has_lower_average() {
-                self.step_up()
+                self.increase(true)
             } else {
                 return None;
             }
@@ -281,16 +303,7 @@ impl NewFees {
         if new_fee <= 0 {
             return Some(1);
         }
-        Some(new_fee.try_into().unwrap())
-    }
-    fn fee_should_step_up(&self) -> bool {
-        self.rev_is_rising()
-    }
-    fn fee_should_step_down(&self) -> bool {
-        self.rev_is_falling()
-    }
-    fn fee_should_adjust(&self) -> bool {
-        self.rev_has_lower_average() || self.rev_has_higher_average()
+        Some(new_fee)
     }
     fn rev_is_rising(&self) -> bool {
         self.past_revenue < self.average_revenue && self.average_revenue < self.present_revenue
@@ -299,10 +312,10 @@ impl NewFees {
         self.past_revenue > self.average_revenue && self.average_revenue > self.present_revenue
     }
     fn rev_has_lower_average(&self) -> bool {
-        self.past_revenue >= self.average_revenue && self.average_revenue < self.present_revenue
+        self.past_revenue > self.average_revenue && self.average_revenue < self.present_revenue
     }
     fn rev_has_higher_average(&self) -> bool {
-        self.past_revenue <= self.average_revenue && self.average_revenue > self.present_revenue
+        self.past_revenue < self.average_revenue && self.average_revenue > self.present_revenue
     }
     fn fee_is_rising(&self) -> bool {
         self.past_fee < self.average_fee && self.average_fee < self.present_fee
@@ -311,38 +324,26 @@ impl NewFees {
         self.past_fee > self.average_fee && self.average_fee > self.present_fee
     }
     fn fee_has_lower_average(&self) -> bool {
-        self.past_fee >= self.average_fee && self.average_fee < self.present_fee
+        self.past_fee > self.average_fee && self.average_fee < self.present_fee
     }
     fn fee_has_higher_average(&self) -> bool {
-        self.past_fee <= self.average_fee && self.average_fee > self.present_fee
+        self.past_fee < self.average_fee && self.average_fee > self.present_fee
     }
-    fn fee_steps_up(&self) -> bool {
-        self.average_fee < self.present_fee && self.present_fee < self.current_fee
+    fn increase(&self, fast: bool) -> u32 {
+        if fast {
+            self.current_fee
+                .saturating_add(self.current_fee.abs_diff(self.present_fee) * 2)
+        } else {
+            self.current_fee.saturating_add(self.adjustment_fee)
+        }
     }
-    fn fee_steps_down(&self) -> bool {
-        self.average_fee > self.present_fee && self.present_fee > self.current_fee
-    }
-    fn fee_adjusts(&self) -> bool {
-        (self.average_fee > self.present_fee && self.present_fee < self.current_fee)
-            || (self.average_fee < self.present_fee && self.present_fee > self.current_fee)
-    }
-    fn step_up(&self) -> i64 {
-        self.current_fee + self.adjustment_fee
-    }
-    fn step_down(&self) -> i64 {
-        self.current_fee - self.adjustment_fee
-    }
-    fn adjust_up(&self) -> i64 {
-        self.current_fee + (self.present_fee - self.current_fee).abs() / 2
-    }
-    fn adjust_down(&self) -> i64 {
-        self.current_fee - (self.present_fee - self.current_fee).abs() / 2
-    }
-    fn run_up(&self) -> i64 {
-        self.current_fee + (self.current_fee - self.present_fee).abs() * 2
-    }
-    fn run_down(&self) -> i64 {
-        self.current_fee - (self.current_fee - self.present_fee).abs() * 2
+    fn decrease(&self, fast: bool) -> u32 {
+        if fast {
+            self.current_fee
+                .saturating_sub(self.current_fee.abs_diff(self.present_fee) * 2)
+        } else {
+            self.current_fee.saturating_sub(self.adjustment_fee)
+        }
     }
 }
 #[allow(unused)]
