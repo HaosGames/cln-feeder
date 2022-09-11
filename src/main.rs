@@ -179,30 +179,42 @@ async fn iterate(
         store_current_values(db, id, current_fee, current_revenue as u32);
     }
 }
-#[derive(Default, Clone, Debug)]
-struct NewFees {
-    past_fee: u32,
-    average_fee: u32,
-    present_fee: u32,
-    current_fee: u32,
+#[derive(Clone, Debug)]
+struct NewFees<'a> {
     past_revenue: u32,
     average_revenue: u32,
     present_revenue: u32,
     current_revenue: u32,
+    past_fee: u32,
+    average_fee: u32,
+    present_fee: u32,
+    current_fee: u32,
     adjustment_fee: u32,
+    id: &'a String,
 }
-impl NewFees {
+impl<'a> NewFees<'a> {
     pub fn calculate(
         values: &Vec<(u32, u32)>,
         adjustment_divisor: u32,
         trigger_divisor: u32,
-        id: &String,
+        id: &'a String,
     ) -> Option<u32> {
         if values.len() < 2 {
             debug!("{}: No last values -> No new fee", id);
             return None;
         }
-        let mut p = Self::default();
+        let mut p = Self {
+            past_revenue: 0,
+            average_revenue: 0,
+            present_revenue: 0,
+            current_revenue: 0,
+            past_fee: 0,
+            average_fee: 0,
+            present_fee: 0,
+            current_fee: 0,
+            adjustment_fee: 0,
+            id,
+        };
         let (mut first_n, mut last_n) = (0, 0);
         for (i, (fee, revenue)) in values.iter().enumerate() {
             if i <= (values.len() - 1) / 3 {
@@ -226,8 +238,8 @@ impl NewFees {
         p.average_revenue /= values.len() as u32;
 
         let (current_fee, current_revenue) = *values.first().unwrap();
-        p.current_fee = current_fee.into();
-        p.current_revenue = current_revenue.into();
+        p.current_fee = current_fee;
+        p.current_revenue = current_revenue;
 
         p.adjustment_fee = if current_fee / adjustment_divisor != 0 {
             current_fee / adjustment_divisor
@@ -247,51 +259,72 @@ impl NewFees {
     #[allow(clippy::if_same_then_else)]
     fn determine(&self) -> Option<u32> {
         let new_fee: u32 = if self.average_revenue == 0 {
+            debug!("{}: Halving fee to search for revenue", self.id);
             self.current_fee / 2
         } else if self.rev_is_rising() {
+            debug!("{}: Revenue is rising", self.id);
             if self.fee_is_rising() {
+                debug!("{}: Fee is rising", self.id);
                 self.increase(true)
             } else if self.fee_is_falling() {
+                debug!("{}: Fee is falling", self.id);
                 self.decrease(true)
             } else if self.fee_has_higher_average() {
+                debug!("{}: Fee has higher average", self.id);
                 self.average_fee
             } else if self.fee_has_lower_average() {
+                debug!("{}: Fee has lower average", self.id);
                 self.increase(false)
             } else {
                 return None;
             }
         } else if self.rev_is_falling() {
+            debug!("{}: Revenue is falling", self.id);
             if self.fee_is_rising() {
+                debug!("{}: Fee is rising", self.id);
                 self.decrease(true)
             } else if self.fee_is_falling() {
+                debug!("{}: Fee is falling", self.id);
                 self.increase(true)
             } else if self.fee_has_higher_average() {
+                debug!("{}: Fee has higher average", self.id);
                 self.increase(false)
             } else if self.fee_has_lower_average() {
+                debug!("{}: Fee has lower average", self.id);
                 self.average_fee
             } else {
                 return None;
             }
         } else if self.rev_has_higher_average() {
+            debug!("{}: Revenue has higher average", self.id);
             if self.fee_is_rising() {
+                debug!("{}: Fee is rising", self.id);
                 self.average_fee
             } else if self.fee_is_falling() {
+                debug!("{}: Fee is falling", self.id);
                 self.increase(false)
             } else if self.fee_has_higher_average() {
+                debug!("{}: Fee has higher average", self.id);
                 self.increase(true)
             } else if self.fee_has_lower_average() {
+                debug!("{}: Fee has lower average", self.id);
                 self.decrease(true)
             } else {
                 return None;
             }
         } else if self.rev_has_lower_average() {
+            debug!("{}: Revenue has lower average", self.id);
             if self.fee_is_rising() {
+                debug!("{}: Fee is rising", self.id);
                 self.increase(false)
             } else if self.fee_is_falling() {
+                debug!("{}: Fee is falling", self.id);
                 self.average_fee
             } else if self.fee_has_higher_average() {
+                debug!("{}: Fee has higher average", self.id);
                 self.decrease(true)
             } else if self.fee_has_lower_average() {
+                debug!("{}: Fee has lower average", self.id);
                 self.increase(true)
             } else {
                 return None;
@@ -300,7 +333,7 @@ impl NewFees {
             return None;
         };
 
-        if new_fee <= 0 {
+        if new_fee == 0 {
             return Some(1);
         }
         Some(new_fee)
@@ -331,17 +364,21 @@ impl NewFees {
     }
     fn increase(&self, fast: bool) -> u32 {
         if fast {
+            debug!("{}: Increasing fee fast", self.id);
             self.current_fee
                 .saturating_add(self.current_fee.abs_diff(self.present_fee) * 2)
         } else {
+            debug!("{}: Increasing fee", self.id);
             self.current_fee.saturating_add(self.adjustment_fee)
         }
     }
     fn decrease(&self, fast: bool) -> u32 {
         if fast {
+            debug!("{}: Decreasing fee fast", self.id);
             self.current_fee
                 .saturating_sub(self.current_fee.abs_diff(self.present_fee) * 2)
         } else {
+            debug!("{}: Decreasing fee", self.id);
             self.current_fee.saturating_sub(self.adjustment_fee)
         }
     }
