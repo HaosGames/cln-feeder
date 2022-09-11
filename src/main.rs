@@ -11,6 +11,7 @@ use cln_rpc::ClnRpc;
 use env_logger::WriteStyle;
 use log::{debug, info, trace, LevelFilter};
 use rusqlite::Connection;
+use std::fmt::Display;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -246,7 +247,7 @@ impl<'a> NewFees<'a> {
         } else {
             1
         };
-        debug!("{}: {:?}", id, p);
+        debug!("{}: {}", id, p);
 
         let trigger_revenue = p.average_revenue.saturating_div(trigger_divisor);
         if p.present_revenue.abs_diff(p.average_revenue) < trigger_revenue && p.average_revenue != 0
@@ -381,6 +382,23 @@ impl<'a> NewFees<'a> {
             debug!("{}: Decreasing fee", self.id);
             self.current_fee.saturating_sub(self.adjustment_fee)
         }
+    }
+}
+impl<'a> Display for NewFees<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "NewFee{{revenue: {}->{}->{}({}), fee: {}->{}->{}({}), channel: {}}}",
+            self.past_revenue,
+            self.average_revenue,
+            self.present_revenue,
+            self.current_revenue,
+            self.past_fee,
+            self.average_fee,
+            self.present_fee,
+            self.current_fee,
+            self.id
+        )
     }
 }
 #[allow(unused)]
