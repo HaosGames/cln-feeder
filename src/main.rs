@@ -244,6 +244,9 @@ impl<'a> NewFees<'a> {
         let new_fee: u32 = if self.average_revenue == 0 {
             debug!("{}: Halving fee to search for revenue", self.id);
             self.current_fee / 2
+        } else if self.present_revenue == 0 {
+            debug!("{}: No present revenue", self.id);
+            self.decrease(true)
         } else if self.rev_is_rising() {
             debug!("{}: Revenue is rising", self.id);
             if self.fee_is_rising() {
@@ -251,7 +254,7 @@ impl<'a> NewFees<'a> {
                 self.increase(true)
             } else if self.fee_is_falling() {
                 debug!("{}: Fee is falling", self.id);
-                self.decrease(true)
+                self.average_fee
             } else if self.fee_has_higher_average() {
                 debug!("{}: Fee has higher average", self.id);
                 self.average_fee
@@ -349,7 +352,7 @@ impl<'a> NewFees<'a> {
         if fast {
             debug!("{}: Increasing fee fast", self.id);
             self.current_fee
-                .saturating_add(self.current_fee.abs_diff(self.present_fee) + self.adjustment_fee)
+                .saturating_add(self.current_fee.abs_diff(self.present_fee) + self.adjustment_fee * 2)
         } else {
             debug!("{}: Increasing fee", self.id);
             self.current_fee.saturating_add(self.adjustment_fee)
@@ -359,7 +362,7 @@ impl<'a> NewFees<'a> {
         if fast {
             debug!("{}: Decreasing fee fast", self.id);
             self.current_fee
-                .saturating_sub(self.current_fee.abs_diff(self.present_fee) + self.adjustment_fee)
+                .saturating_sub(self.current_fee.abs_diff(self.present_fee) + self.adjustment_fee * 2)
         } else {
             debug!("{}: Decreasing fee", self.id);
             self.current_fee.saturating_sub(self.adjustment_fee)
