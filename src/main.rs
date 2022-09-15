@@ -48,11 +48,6 @@ struct Cli {
     #[clap(short = 'a', long, default_value_t = 10, value_name = "POSITIVE INT")]
     adjustment_divisor: u32,
 
-    /// If the revenue change exceeds the average revenue divided by this divisor
-    /// a new fee for the next epoch will be calculated
-    #[clap(short = 'A', long, default_value_t = 10, value_name = "POSITIVE INT")]
-    trigger_divisor: u32,
-
     /// Past epochs to take into account when calculating new fees
     #[clap(short = 'e', long, default_value_t = 6)]
     epochs: u32,
@@ -108,10 +103,6 @@ async fn main() -> Result<()> {
         cli.adjustment_divisor != 0,
         "The divisor must be bigger than 0"
     );
-    assert!(
-        cli.trigger_divisor != 0,
-        "The divisor must be bigger than 0"
-    );
 
     loop {
         trace!("New Iteration");
@@ -119,7 +110,6 @@ async fn main() -> Result<()> {
             cli.epochs,
             cli.epoch_length,
             cli.adjustment_divisor,
-            cli.trigger_divisor,
             &mut client,
             &mut db,
         )
@@ -131,7 +121,6 @@ async fn iterate(
     epochs: u32,
     epoch_length: u32,
     adjustment_divisor: u32,
-    trigger_divisor: u32,
     client: &mut ClnRpc,
     db: &mut Connection,
 ) {
@@ -172,7 +161,7 @@ async fn iterate(
             .map(|(_, fee, revenue)| (*fee, *revenue))
             .collect();
         values.insert(0, (current_fee, current_revenue.try_into().unwrap()));
-        if let Some(new_fee) = NewFees::calculate(&values, adjustment_divisor, trigger_divisor, &id)
+        if let Some(new_fee) = NewFees::calculate(&values, adjustment_divisor, &id)
         {
             info!("{}: New fee {} -> {} msats", id, current_fee, new_fee);
             set_channel_fee(client, &id, new_fee).await;
@@ -197,7 +186,6 @@ impl<'a> NewFees<'a> {
     pub fn calculate(
         values: &Vec<(u32, u32)>,
         adjustment_divisor: u32,
-        trigger_divisor: u32,
         id: &'a String,
     ) -> Option<u32> {
         if values.len() < 2 {
@@ -249,12 +237,6 @@ impl<'a> NewFees<'a> {
         };
         debug!("{}: {}", id, p);
 
-        let trigger_revenue = p.average_revenue.saturating_div(trigger_divisor);
-        if p.present_revenue.abs_diff(p.average_revenue) < trigger_revenue && p.average_revenue != 0
-        {
-            debug!("{}: No new fee. Revenue change wasn't big enough", id);
-            return None;
-        }
         p.determine()
     }
     #[allow(clippy::if_same_then_else)]
@@ -277,7 +259,7 @@ impl<'a> NewFees<'a> {
                 debug!("{}: Fee has lower average", self.id);
                 self.increase(false)
             } else {
-                return None;
+                self.increase(true)
             }
         } else if self.rev_is_falling() {
             debug!("{}: Revenue is falling", self.id);
@@ -294,7 +276,7 @@ impl<'a> NewFees<'a> {
                 debug!("{}: Fee has lower average", self.id);
                 self.average_fee
             } else {
-                return None;
+                self.decrease(false)
             }
         } else if self.rev_has_higher_average() {
             debug!("{}: Revenue has higher average", self.id);
@@ -311,7 +293,7 @@ impl<'a> NewFees<'a> {
                 debug!("{}: Fee has lower average", self.id);
                 self.decrease(true)
             } else {
-                return None;
+                self.increase(false) 
             }
         } else if self.rev_has_lower_average() {
             debug!("{}: Revenue has lower average", self.id);
@@ -328,10 +310,10 @@ impl<'a> NewFees<'a> {
                 debug!("{}: Fee has lower average", self.id);
                 self.increase(true)
             } else {
-                return None;
+                self.increase(false)
             }
         } else {
-            return None;
+            self.increase(false)
         };
 
         if new_fee == 0 {
@@ -367,7 +349,7 @@ impl<'a> NewFees<'a> {
         if fast {
             debug!("{}: Increasing fee fast", self.id);
             self.current_fee
-                .saturating_add(self.current_fee.abs_diff(self.present_fee) * 2)
+                .saturating_add(self.current_fee.abs_diff(self.present_fee) + self.adjustment_fee)
         } else {
             debug!("{}: Increasing fee", self.id);
             self.current_fee.saturating_add(self.adjustment_fee)
@@ -377,7 +359,7 @@ impl<'a> NewFees<'a> {
         if fast {
             debug!("{}: Decreasing fee fast", self.id);
             self.current_fee
-                .saturating_sub(self.current_fee.abs_diff(self.present_fee) * 2)
+                .saturating_sub(self.current_fee.abs_diff(self.present_fee) + self.adjustment_fee)
         } else {
             debug!("{}: Decreasing fee", self.id);
             self.current_fee.saturating_sub(self.adjustment_fee)
